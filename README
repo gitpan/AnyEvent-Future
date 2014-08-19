@@ -1,0 +1,45 @@
+NAME
+    `AnyEvent::Future' - use Future with AnyEvent
+
+SYNOPSIS
+     use AnyEvent;
+     use AnyEvent::Future;
+
+     my $future = AnyEvent::Future->new;
+
+     some_async_function( ..., cb => sub { $future->done( @_ ) } );
+
+     print Future->await_any(
+        $future,
+        AnyEvent::Future->new_timeout( after => 10 ),
+     )->get;
+
+DESCRIPTION
+    This subclass of Future integrates with AnyEvent, allowing the `await'
+    method to block until the future is ready. It allows `AnyEvent'-using
+    code to be written that returns `Future' instances, so that it can make
+    full use of `Future''s abilities, including Future::Utils, and also that
+    modules using it can provide a `Future'-based asynchronous interface of
+    their own.
+
+    For a full description on how to use Futures, see the Future
+    documentation.
+
+CONSTRUCTORS
+  $f = AnyEvent::Future->new
+    Returns a new leaf future instance, which will allow waiting for its
+    result to be made available, using the `await' method.
+
+  $f = AnyEvent::Future->new_delay( @args )
+  $f = AnyEvent::Future->new_timeout( @args )
+    Returns a new leaf future instance that will become ready at the time
+    given by the arguments, which will be passed to the `AnyEvent->timer'
+    method.
+
+    `new_delay' returns a future that will complete successfully at the
+    alotted time, whereas `new_timeout' returns a future that will fail with
+    the message `Timeout'.
+
+AUTHOR
+    Paul Evans <leonerd@leonerd.org.uk>
+
