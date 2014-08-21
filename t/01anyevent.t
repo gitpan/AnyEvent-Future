@@ -4,18 +4,9 @@ use strict;
 use warnings;
 
 use Test::More;
-use Test::Identity;
-use Test::Timer;
 
 use AnyEvent;
-use AnyEvent::Future;
-
-# TODO - suggest this for Test::Timer
-sub time_about
-{
-   my ( $code, $limit, $name ) = @_;
-   time_between $code, $limit * 0.9, $limit * 1.1, $name;
-}
+use AnyEvent::Future qw( as_future as_future_cb );
 
 {
    my $future = AnyEvent::Future->new;
@@ -25,33 +16,55 @@ sub time_about
    is_deeply( [ $future->get ], [ "result" ], '$future->get on AnyEvent::Future' );
 }
 
-# new_delay
+# as_future
 {
-   my $future = AnyEvent::Future->new_delay( after => 1 );
+   my $future = as_future {
+      my $f = shift;
+      AnyEvent::postpone { $f->done( "another result" ) };
+   };
 
-   time_about( sub { $future->await }, 1, '->new_delay future is ready' );
-
-   is_deeply( [ $future->get ], [], '$future->get returns empty list on new_delay' );
+   is_deeply( [ $future->get ], [ "another result" ], '$future->get on as_future' );
 }
 
-# Check that ->cancel does not crash
+# as_future cancellation
 {
-   my $future = AnyEvent::Future->new_delay( after => 0.1 );
+   my $called;
+   my $future = as_future {
+      my $f = shift;
+      return AnyEvent->timer(
+         after => 0.01,
+         cb => sub { $called++; $f->done; },
+      );
+   };
+
    $future->cancel;
 
-   AnyEvent::Future->new_delay( after => 0.3 )->get;
+   my $cv = AnyEvent->condvar;
+   my $tmp = AnyEvent->timer( after => 0.03, cb => sub { $cv->send } );
+   $cv->recv;
 
-   ok( $future->is_cancelled, '$future is cancelled after ->cancel' );
+   ok( !$called, '$future->cancel cancels a pending watch' );
 }
 
-# new_timeout
+# as_future_cb done
 {
-   my $future = AnyEvent::Future->new_timeout( after => 1 );
+   my $future = as_future_cb {
+      my ( $done ) = @_;
+      AnyEvent::postpone { $done->( "success" ) };
+   };
 
-   time_about( sub { $future->await }, 1, '->new_timeout is ready' );
+   is_deeply( [ $future->get ], [ "success" ], '$future->get on as_future_cb done' );
+}
 
-   ok( $future->is_ready, '$future is ready from new_timeout' );
-   is( $future->failure, "Timeout", '$future failed with "Timeout" for new_timeout' );
+# as_future fail
+{
+   my $future = as_future_cb {
+      my ( $done, $fail ) = @_;
+      AnyEvent::postpone { $fail->( "It failed!" ) };
+   };
+
+   $future->await;
+   is_deeply( [ $future->failure ], [ "It failed!" ], '$future->failure on as_future_cb fail' );
 }
 
 done_testing;

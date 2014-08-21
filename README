@@ -14,6 +14,17 @@ SYNOPSIS
         AnyEvent::Future->new_timeout( after => 10 ),
      )->get;
 
+    Or
+
+     use AnyEvent::Future qw( as_future_cb );
+
+     print Future->await_any(
+        as_future_cb {
+           some_async_function( ..., cb => shift )
+        },
+        AnyEvent::Future->new_timeout( after => 10 ),
+     )->get;
+
 DESCRIPTION
     This subclass of Future integrates with AnyEvent, allowing the `await'
     method to block until the future is ready. It allows `AnyEvent'-using
@@ -39,6 +50,29 @@ CONSTRUCTORS
     `new_delay' returns a future that will complete successfully at the
     alotted time, whereas `new_timeout' returns a future that will fail with
     the message `Timeout'.
+
+UTILTIY FUNCTIONS
+    The following utility functions are exported as a convenience.
+
+  $f = as_future { CODE }
+    Returns a new leaf future instance, which is also passed in to the block
+    of code. The code is called in scalar context, and its return value is
+    stored on the future. This will be deleted if the future is cancelled.
+
+     $w = CODE->( $f )
+
+    This utility is provided for the common case of wanting to wrap an
+    `AnyEvent' function which will want to receive a callback function to
+    inform of completion, and which will return a watcher object reference
+    that needs to be stored somewhere.
+
+  $f = as_future_cb { CODE }
+    A futher shortcut to `as_future', where the code is passed two callback
+    functions for `done' and `fail' directly, avoiding boilerplate in the
+    common case for creating these closures capturing the future variable.
+    In many cases this can reduce the code block to a single line.
+
+     $w = CODE->( $done_cb, $fail_cb )
 
 AUTHOR
     Paul Evans <leonerd@leonerd.org.uk>

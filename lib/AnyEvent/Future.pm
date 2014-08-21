@@ -8,10 +8,16 @@ package AnyEvent::Future;
 use strict;
 use warnings;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 use base qw( Future );
 Future->VERSION( '0.05' ); # to respect subclassing
+
+use Exporter 'import';
+our @EXPORT_OK = qw(
+   as_future
+   as_future_cb
+);
 
 use AnyEvent;
 
@@ -33,6 +39,17 @@ C<AnyEvent::Future> - use L<Future> with L<AnyEvent>
     AnyEvent::Future->new_timeout( after => 10 ),
  )->get;
 
+Or
+
+ use AnyEvent::Future qw( as_future_cb );
+
+ print Future->await_any(
+    as_future_cb {
+       some_async_function( ..., cb => shift )
+    },
+    AnyEvent::Future->new_timeout( after => 10 ),
+ )->get;
+
 =head1 DESCRIPTION
 
 This subclass of L<Future> integrates with L<AnyEvent>, allowing the C<await>
@@ -44,6 +61,9 @@ it can provide a C<Future>-based asynchronous interface of their own.
 For a full description on how to use Futures, see the L<Future> documentation.
 
 =cut
+
+# Forward
+sub as_future(&);
 
 =head1 CONSTRUCTORS
 
@@ -69,26 +89,27 @@ C<Timeout>.
 
 =cut
 
-sub _new_timeout
+sub new_delay
 {
-   my $self = shift->new;
-   my $method = shift;
+   shift;
+   my %args = @_;
 
-   $self->{w} = AnyEvent->timer(
-      @_,
-      cb => sub { $self->$method( $method eq "fail" ? "Timeout" : () ) },
-   );
-
-   $self->on_cancel( sub {
-      my $self = shift;
-      undef $self->{w};
-   });
-
-   return $self;
+   as_future {
+      my $f = shift;
+      AnyEvent->timer( %args, cb => sub { $f->done } );
+   };
 }
 
-sub new_delay   { shift->_new_timeout( done => @_ ) }
-sub new_timeout { shift->_new_timeout( fail => @_ ) }
+sub new_timeout
+{
+   shift;
+   my %args = @_;
+
+   as_future {
+      my $f = shift;
+      AnyEvent->timer( %args, cb => sub { $f->fail( "Timeout" ) } );
+   };
+}
 
 sub await
 {
@@ -98,6 +119,60 @@ sub await
    $self->on_ready( sub { $cv->send } );
 
    $cv->recv;
+}
+
+=head1 UTILTIY FUNCTIONS
+
+The following utility functions are exported as a convenience.
+
+=cut
+
+=head2 $f = as_future { CODE }
+
+Returns a new leaf future instance, which is also passed in to the block of
+code. The code is called in scalar context, and its return value is stored on
+the future. This will be deleted if the future is cancelled.
+
+ $w = CODE->( $f )
+
+This utility is provided for the common case of wanting to wrap an C<AnyEvent>
+function which will want to receive a callback function to inform of
+completion, and which will return a watcher object reference that needs to be
+stored somewhere.
+
+=cut
+
+sub as_future(&)
+{
+   my ( $code ) = @_;
+
+   my $f = AnyEvent::Future->new;
+
+   $f->{w} = $code->( $f );
+   $f->on_cancel( sub { undef shift->{w} } );
+
+   return $f;
+}
+
+=head2 $f = as_future_cb { CODE }
+
+A futher shortcut to C<as_future>, where the code is passed two callback
+functions for C<done> and C<fail> directly, avoiding boilerplate in the common
+case for creating these closures capturing the future variable. In many cases
+this can reduce the code block to a single line.
+
+ $w = CODE->( $done_cb, $fail_cb )
+
+=cut
+
+sub as_future_cb(&)
+{
+   my ( $code ) = @_;
+
+   &as_future( sub {
+      my $f = shift;
+      $code->( $f->done_cb, $f->fail_cb );
+   });
 }
 
 =head1 AUTHOR
